@@ -245,7 +245,7 @@ function renderEmptyOrList() {
     /* Contextual empty message */
     if (state.currentView === 'playlist') {
       empty.querySelector('h2').textContent       = 'This playlist is empty';
-      empty.querySelector('p').textContent        = 'Right-click any track in your library and choose "Add to Playlist"';
+      empty.querySelector('p').textContent        = 'Tap ••• on any track in your library to add it to this playlist';
       empty.querySelector('.btn-import-large').style.display = 'none';
     } else {
       empty.querySelector('h2').textContent       = 'Your library is empty';
@@ -295,7 +295,20 @@ function renderTrackList(tracks) {
       </div>
       <div class="track-album" title="${esc(track.album)}">${esc(track.album)}</div>
       <div class="track-dur">${formatTime(track.duration)}</div>
+      <button class="track-action-btn" aria-label="More options" title="More options">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+      </button>
     `;
+
+    /* Action button → context menu (desktop) or action sheet (mobile) */
+    row.querySelector('.track-action-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (isMobile()) {
+        showActionSheet(track.id);
+      } else {
+        showContextMenu(e.clientX, e.clientY, track.id);
+      }
+    });
 
     /* Double click → play */
     row.addEventListener('dblclick', () => playFromList(track.id, tracks));
@@ -307,10 +320,14 @@ function renderTrackList(tracks) {
       }
     });
 
-    /* Right click → context menu */
+    /* Right click → context menu (desktop) / long-press fallback (mobile) */
     row.addEventListener('contextmenu', (e) => {
       e.preventDefault();
-      showContextMenu(e.clientX, e.clientY, track.id);
+      if (isMobile()) {
+        showActionSheet(track.id);
+      } else {
+        showContextMenu(e.clientX, e.clientY, track.id);
+      }
     });
 
     /* Keyboard enter */
@@ -604,6 +621,7 @@ audio.addEventListener('timeupdate', () => {
   document.getElementById('progress-thumb').style.left  = `${pct}%`;
   document.getElementById('time-current').textContent   = formatTime(audio.currentTime);
   document.getElementById('progress-track').setAttribute('aria-valuenow', Math.round(pct));
+  document.getElementById('player-mini-progress-fill').style.width = `${pct}%`;
 });
 
 audio.addEventListener('loadedmetadata', () => {
@@ -620,18 +638,35 @@ audio.addEventListener('pause', () => { state.isPlaying = false; updatePlayPause
 /* ── Seek ── */
 function setupSeek() {
   const track = document.getElementById('progress-track');
+  const mini  = document.getElementById('player-mini-progress');
   let seeking = false;
+
+  function getX(e) { return e.touches ? e.touches[0].clientX : e.clientX; }
 
   function seekTo(e) {
     if (!audio.duration) return;
     const rect = track.getBoundingClientRect();
-    const pct  = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const pct  = Math.max(0, Math.min(1, (getX(e) - rect.left) / rect.width));
     audio.currentTime = pct * audio.duration;
   }
 
-  track.addEventListener('mousedown', (e) => { seeking = true; seekTo(e); });
-  document.addEventListener('mousemove', (e) => { if (seeking) seekTo(e); });
-  document.addEventListener('mouseup',   ()  => { seeking = false; });
+  function miniSeekTo(e) {
+    if (!audio.duration) return;
+    const rect = mini.getBoundingClientRect();
+    const pct  = Math.max(0, Math.min(1, (getX(e) - rect.left) / rect.width));
+    audio.currentTime = pct * audio.duration;
+  }
+
+  track.addEventListener('mousedown',  (e) => { seeking = true; seekTo(e); });
+  track.addEventListener('touchstart', (e) => { seeking = true; seekTo(e); }, { passive: true });
+  document.addEventListener('mousemove',  (e) => { if (seeking) seekTo(e); });
+  document.addEventListener('touchmove',  (e) => { if (seeking) seekTo(e); }, { passive: true });
+  document.addEventListener('mouseup',    ()  => { seeking = false; });
+  document.addEventListener('touchend',   ()  => { seeking = false; });
+
+  /* Mini progress bar (mobile top strip) */
+  mini.addEventListener('touchstart', (e) => { miniSeekTo(e); }, { passive: true });
+  mini.addEventListener('click', (e) => { miniSeekTo(e); });
 }
 
 /* ── Volume ── */
@@ -639,9 +674,11 @@ function setupVolume() {
   const volTrack = document.getElementById('volume-track');
   let dragging = false;
 
+  function getX(e) { return e.touches ? e.touches[0].clientX : e.clientX; }
+
   function setVol(e) {
     const rect = volTrack.getBoundingClientRect();
-    const pct  = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const pct  = Math.max(0, Math.min(1, (getX(e) - rect.left) / rect.width));
     state.volume = pct;
     state.isMuted = (pct === 0);
     audio.volume = pct;
@@ -650,9 +687,12 @@ function setupVolume() {
     volTrack.setAttribute('aria-valuenow', Math.round(pct * 100));
   }
 
-  volTrack.addEventListener('mousedown', (e) => { dragging = true; setVol(e); });
-  document.addEventListener('mousemove', (e) => { if (dragging) setVol(e); });
-  document.addEventListener('mouseup',   ()  => { dragging = false; });
+  volTrack.addEventListener('mousedown',  (e) => { dragging = true; setVol(e); });
+  volTrack.addEventListener('touchstart', (e) => { dragging = true; setVol(e); }, { passive: true });
+  document.addEventListener('mousemove',  (e) => { if (dragging) setVol(e); });
+  document.addEventListener('touchmove',  (e) => { if (dragging) setVol(e); }, { passive: true });
+  document.addEventListener('mouseup',    ()  => { dragging = false; });
+  document.addEventListener('touchend',   ()  => { dragging = false; });
 }
 
 function updateVolumeIcon() {
@@ -700,6 +740,8 @@ function openPlaylist(id) {
   state.searchQuery = '';
   document.getElementById('search-input').value = '';
   updateActiveNav(null);
+  updateMobileNav(null);
+  if (isMobile()) closeSidebar();
   renderPlaylists(); // refresh active state
   applySearchAndRender();
 }
@@ -735,6 +777,8 @@ function navigateTo(view, playlistId = null) {
   state.searchQuery       = '';
   document.getElementById('search-input').value = '';
   updateActiveNav(view);
+  updateMobileNav(view);
+  if (isMobile()) closeSidebar();
 
   const titles = {
     library: 'Your Library',
@@ -1005,6 +1049,108 @@ function openAddToPlaylistModal(trackId) {
 }
 
 /* ══════════════════════════════════════════════════════════
+   MOBILE HELPERS
+══════════════════════════════════════════════════════════ */
+function isMobile() {
+  return window.matchMedia('(max-width: 768px)').matches;
+}
+
+/* ── Sidebar drawer (mobile) ── */
+function openSidebar() {
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('sidebar-overlay').classList.add('active');
+}
+
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('active');
+}
+
+/* ── Action sheet (mobile context menu replacement) ── */
+let actionSheetTrackId = null;
+
+function showActionSheet(trackId) {
+  actionSheetTrackId = trackId;
+  const track = state.tracks.find(t => t.id === trackId);
+  if (!track) return;
+
+  document.getElementById('as-title').textContent  = track.title;
+  document.getElementById('as-artist').textContent = track.artist;
+
+  const artEl = document.getElementById('as-art');
+  if (track.artwork) {
+    artEl.innerHTML = `<img src="${track.artwork}" alt="" />`;
+  } else {
+    artEl.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>`;
+  }
+
+  const overlay = document.getElementById('action-sheet-overlay');
+  overlay.style.display = 'flex';
+}
+
+function hideActionSheet() {
+  document.getElementById('action-sheet-overlay').style.display = 'none';
+  actionSheetTrackId = null;
+}
+
+/* ── Mobile nav active state ── */
+function updateMobileNav(view) {
+  document.querySelectorAll('.mobile-nav-item[data-view]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.view === view);
+  });
+  const menuBtn = document.getElementById('btn-mobile-menu');
+  if (menuBtn) menuBtn.classList.remove('active');
+}
+
+/* ── Setup mobile-specific event listeners ── */
+function setupMobileListeners() {
+  /* Hamburger → open sidebar */
+  document.getElementById('btn-menu').addEventListener('click', openSidebar);
+
+  /* Sidebar close button */
+  document.getElementById('btn-sidebar-close').addEventListener('click', closeSidebar);
+
+  /* Sidebar overlay tap → close */
+  document.getElementById('sidebar-overlay').addEventListener('click', closeSidebar);
+
+  /* Mobile bottom nav items */
+  document.querySelectorAll('.mobile-nav-item[data-view]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      navigateTo(btn.dataset.view);
+      updateMobileNav(btn.dataset.view);
+      if (isMobile()) closeSidebar();
+    });
+  });
+
+  /* Mobile "Playlists" tab → open sidebar */
+  document.getElementById('btn-mobile-menu').addEventListener('click', openSidebar);
+
+  /* Action sheet items */
+  document.getElementById('as-play').addEventListener('click', () => {
+    if (actionSheetTrackId) playFromList(actionSheetTrackId, getCurrentViewTracks());
+    hideActionSheet();
+  });
+  document.getElementById('as-queue').addEventListener('click', () => {
+    if (actionSheetTrackId) addToQueue(actionSheetTrackId);
+    hideActionSheet();
+  });
+  document.getElementById('as-playlist').addEventListener('click', () => {
+    if (actionSheetTrackId) openAddToPlaylistModal(actionSheetTrackId);
+    hideActionSheet();
+  });
+  document.getElementById('as-delete').addEventListener('click', () => {
+    if (actionSheetTrackId) deleteTrack(actionSheetTrackId);
+    hideActionSheet();
+  });
+  document.getElementById('as-cancel').addEventListener('click', hideActionSheet);
+
+  /* Tap overlay to dismiss action sheet */
+  document.getElementById('action-sheet-overlay').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('action-sheet-overlay')) hideActionSheet();
+  });
+}
+
+/* ══════════════════════════════════════════════════════════
    INIT
 ══════════════════════════════════════════════════════════ */
 async function init() {
@@ -1026,12 +1172,14 @@ async function init() {
     applySearchAndRender();
     renderPlaylists();
     setupEventListeners();
+    setupMobileListeners();
   } catch (err) {
     console.error('Ember init failed:', err);
     /* Still set up UI even if DB fails */
     applySearchAndRender();
     renderPlaylists();
     setupEventListeners();
+    setupMobileListeners();
     showToast('⚠️ Storage unavailable — library won\'t persist');
   }
 }
