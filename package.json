@@ -1,0 +1,20 @@
+{
+  "name": "ember-music",
+  "version": "1.0.0",
+  "description": "Ember — a local music player with fire-themed UI",
+  "scripts": {
+    "start": "npx --yes http-server . -p 8080 -c-1 --cors -o",
+    "dev": "npx --yes http-server . -p 8080 -c-1 --cors"
+  },
+  "keywords": [
+    "music",
+    "player",
+    "local",
+    "ember"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "jsmediatags": "^3.9.7"
+  }
+}
